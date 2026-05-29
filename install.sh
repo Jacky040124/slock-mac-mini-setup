@@ -130,8 +130,37 @@ ver "Slock"        "slock --version"
 ver "OpenCLI"      "opencli --version"
 echo "═══════════════════════════════════════════════════"
 
-# Auto-open the apps that still need manual sign-in
-log "Opening apps for manual sign-in..."
+# Sign in to AI tool CLIs (Claude Code + Codex use browser-based OAuth)
+log "AI tool sign-in (Claude Code + Codex use browser OAuth)"
+echo "Press Enter to start CLI sign-ins, or Ctrl+C to skip and do it manually later."
+read -r _
+
+# Claude Code (Anthropic)
+log "Sign in to Claude Code"
+if claude auth status >/dev/null 2>&1; then
+  ok "Claude Code already authenticated"
+else
+  if claude auth login; then
+    ok "Claude Code signed in"
+  else
+    warn "Claude Code sign-in skipped or failed. Run later: claude auth login"
+  fi
+fi
+
+# Codex (OpenAI)
+log "Sign in to Codex"
+if codex login status >/dev/null 2>&1; then
+  ok "Codex already authenticated"
+else
+  if codex login; then
+    ok "Codex signed in"
+  else
+    warn "Codex sign-in skipped or failed. Run later: codex login"
+  fi
+fi
+
+# Auto-open the GUI apps that still need manual sign-in
+log "Opening GUI apps for manual sign-in..."
 open -a "Tailscale" 2>/dev/null || true
 open -a "Beeper Desktop" 2>/dev/null || true
 open -a "Obsidian" 2>/dev/null || true
@@ -140,7 +169,7 @@ open -a "Google Chrome" 2>/dev/null || true
 cat <<'POST'
 
 ────────────────────────────────────────────────────
-  Remaining manual steps
+  Remaining manual steps (GUI)
 ────────────────────────────────────────────────────
   1. Chrome     → sign in to client accounts (XHS / IG / Gmail / WhatsApp Web / WeChat)
   2. Tailscale  → join the Ecoya tailnet
