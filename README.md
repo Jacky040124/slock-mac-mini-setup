@@ -1,6 +1,8 @@
 # slock-mac-mini-setup
 
-Standard Mac mini deployment for Ecoya Consulting clients. Installs everything needed to run Slock + agents at a client site.
+Standard Mac mini deployment for Ecoya Consulting clients. Installs everything needed to run Slock + agents at a client site, in one command.
+
+Comments and log output are in English so any client can follow along.
 
 ## Quick Start
 
