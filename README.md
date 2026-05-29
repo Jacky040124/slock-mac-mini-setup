@@ -4,13 +4,26 @@ Standard Mac mini deployment for Ecoya Consulting clients. Installs everything n
 
 ## Quick Start
 
-On a fresh macOS Mac mini, run:
+On a fresh macOS Mac mini, **log in as an admin user**, open Terminal and run:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Jacky040124/slock-mac-mini-setup/main/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Jacky040124/slock-mac-mini-setup/main/bootstrap.sh -o ~/bootstrap.sh && bash ~/bootstrap.sh
 ```
 
-That's it. Takes 10-15 minutes depending on network.
+> **Why `download then bash` instead of `curl | bash`?**
+> `bootstrap.sh` runs a pre-flight check that needs interactive `sudo` to cache admin authorization for the whole install (~15 min). `curl | bash` pipes stdin away from the terminal and `sudo` can't read the password.
+
+Takes 10-15 minutes depending on network.
+
+## Pre-flight check
+
+`bootstrap.sh` validates the environment before doing anything:
+
+1. **Admin user** — current macOS account must be admin (else Homebrew + cask installs fail)
+2. **Network** — must reach github.com
+3. **Sudo cache** — prompts admin password **once**, then a background keep-alive holds the cache so subsequent `sudo` calls (Homebrew, brew cask) pass silently
+
+If any check fails, the script exits with a clear actionable message and does **not** start installing.
 
 ## What it installs (14 items)
 
