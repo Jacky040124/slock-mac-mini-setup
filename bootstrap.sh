@@ -15,6 +15,16 @@ err() { printf "\033[1;31m✗ %s\033[0m\n" "$1"; }
 # ─── 0/4  Pre-flight ─────────────────────────────────────────────────────────
 log "0/4  Pre-flight checks"
 
+# CPU architecture — Apple Silicon only
+ARCH="$(uname -m)"
+if [[ "$ARCH" != "arm64" ]]; then
+  err "本脚本只支持 Apple Silicon Mac (M1/M2/M3/M4)"
+  err "检测到架构 $ARCH（Intel），请换 Apple Silicon 机型"
+  err "Apple 2022 年底已停产 Intel Mac mini，目前所有在售 Mac mini 都是 Apple Silicon"
+  exit 1
+fi
+ok "Apple Silicon 架构（$ARCH）"
+
 # admin user
 if ! dseditgroup -o checkmember -m "$USER" admin >/dev/null 2>&1; then
   err "当前用户 $USER 不是 admin。装 Homebrew / cask 需要 admin。"
@@ -22,6 +32,15 @@ if ! dseditgroup -o checkmember -m "$USER" admin >/dev/null 2>&1; then
   exit 1
 fi
 ok "用户 $USER 是 admin"
+
+# disk space — need >= 5 GB free on /
+DISK_AVAIL_GB="$(df -k / | awk 'NR==2 {print int($4/1048576)}')"
+if [[ "$DISK_AVAIL_GB" -lt 5 ]]; then
+  err "可用磁盘空间只有 ${DISK_AVAIL_GB} GB，至少需要 5 GB（Brewfile + npm globals ≈ 1.5 GB，外加 Xcode CLI ≈ 1 GB 和缓冲）"
+  err "清理磁盘后再跑：'open ~/.Trash' 清空回收站、删除大文件、清理 ~/Downloads"
+  exit 1
+fi
+ok "可用磁盘 ${DISK_AVAIL_GB} GB（≥ 5 GB 需求）"
 
 # network
 if ! curl -fsS --max-time 5 https://github.com >/dev/null; then
