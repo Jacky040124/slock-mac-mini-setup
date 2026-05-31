@@ -6,7 +6,7 @@
 
 set -e
 
-VERSION="v5.6.6"
+VERSION="v5.6.7"
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -170,6 +170,32 @@ ver "Tailscale"    "tailscale --version"
 ver "OpenCLI"      "opencli --version"
 echo "═══════════════════════════════════════════════════"
 
+# ─── macOS always-on settings (headless 24/7 operation) ─────────────────────
+log "macOS always-on settings"
+
+if sudo pmset -a sleep 0 >/dev/null; then ok "Sleep disabled"; else warn "Failed to disable sleep"; fi
+if sudo pmset -a disksleep 0 >/dev/null; then ok "Disk sleep disabled"; else warn "Failed to disable disk sleep"; fi
+if sudo pmset -a womp 1 >/dev/null; then ok "Wake on network enabled"; else warn "Failed to enable wake on network"; fi
+if sudo pmset -a autorestart 1 >/dev/null; then ok "Auto-restart on power failure enabled"; else warn "Failed to enable auto-restart"; fi
+
+# FileVault check — when on, disk unlock is required on every boot, breaking
+# unattended operation. Don't auto-disable (security trade-off is the user's
+# call); just surface the status.
+FV_STATUS="$(fdesetup status 2>/dev/null | head -1)"
+case "$FV_STATUS" in
+  "FileVault is Off."*)
+    ok "FileVault: Off (headless boot OK)"
+    ;;
+  "FileVault is On."*)
+    warn "FileVault is ON — disk unlock required on every boot, breaks unattended operation."
+    warn "  Consider disabling: System Settings → Privacy & Security → FileVault → Turn Off"
+    warn "  (Or accept that someone must enter the password after every reboot.)"
+    ;;
+  *)
+    warn "FileVault status unknown: $FV_STATUS"
+    ;;
+esac
+
 # ─── Tailscale + macOS Screen Sharing (remote support backbone) ──────────────
 log "Tailscale + Screen Sharing setup (for remote SSH/VNC from Jacky's MacBook)"
 
@@ -268,5 +294,20 @@ if [[ "$codex_authed" -eq 0 ]]; then
   fi
 fi
 
-echo
+cat <<'AUTOLOGIN'
+
+────────────────────────────────────────────────────
+  ⚠ One-time manual step: enable Auto-login (GUI only)
+────────────────────────────────────────────────────
+  After a reboot, user-level apps (Slock daemon, Beeper, Obsidian, etc.)
+  only start once a user is logged in. macOS does not allow setting auto-login
+  safely from the command line, so configure it once via the GUI:
+
+    System Settings → Users & Groups → Automatically log in as → <user>
+
+  Without this, after a power outage the machine will boot but stay at the
+  login screen and your background agents will be unreachable.
+
+AUTOLOGIN
+
 echo "Install log: $LOG_FILE"
