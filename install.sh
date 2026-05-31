@@ -6,7 +6,7 @@
 
 set -e
 
-VERSION="v5.6.2"
+VERSION="v5.6.3"
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -147,8 +147,14 @@ echo "════════════════════════�
 # ─── Tailscale + macOS Screen Sharing (remote support backbone) ──────────────
 log "Tailscale + Screen Sharing setup (for remote SSH/VNC from Jacky's MacBook)"
 
-if tailscale status 2>/dev/null | grep -qE "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\s"; then
-  ok "Tailscale already up: $(tailscale ip -4 2>/dev/null | head -1)"
+# Tailscale CLI shim lives at /usr/local/bin/tailscale (Intel) or /opt/homebrew/bin/tailscale
+# (Apple Silicon brew). 'sudo' uses secure_path by default which doesn't include those,
+# so 'sudo tailscale' fails with 'command not found'. Use the absolute path inside the .app
+# bundle, which always works regardless of brew layout.
+TAILSCALE_BIN="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+
+if "$TAILSCALE_BIN" status 2>/dev/null | grep -qE "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\s"; then
+  ok "Tailscale already up: $("$TAILSCALE_BIN" ip -4 2>/dev/null | head -1)"
 else
   # Auth key resolution order:
   #   1. $TAILSCALE_AUTH_KEY env var (highest priority)
@@ -187,20 +193,26 @@ else
     read -rp "Hostname on tailnet [$DEFAULT_HOSTNAME]: " TS_HOSTNAME
     TS_HOSTNAME="${TS_HOSTNAME:-$DEFAULT_HOSTNAME}"
 
-    if sudo tailscale up \
+    # Refresh sudo cache right before invoking — install may have taken many minutes
+    # since pre-flight cached sudo, and the background keep-alive can fail silently
+    # for various reasons (tty changes, signal handling, etc). Better to re-verify
+    # than have sudo prompt mid-Tailscale-up.
+    sudo -v
+
+    if sudo "$TAILSCALE_BIN" up \
          --auth-key="$TS_AUTH_KEY" \
          --hostname="$TS_HOSTNAME" \
          --advertise-tags=tag:ecoya-client \
          --ssh; then
-      TS_IP="$(tailscale ip -4 2>/dev/null | head -1)"
+      TS_IP="$("$TAILSCALE_BIN" ip -4 2>/dev/null | head -1)"
       ok "Tailscale up as '$TS_HOSTNAME' (tailnet IP $TS_IP, Tailscale SSH enabled)"
     else
       warn "Tailscale up failed. Run manually:"
-      warn "  sudo tailscale up --auth-key=<key> --hostname=<name> --advertise-tags=tag:ecoya-client --ssh"
+      warn "  sudo $TAILSCALE_BIN up --auth-key=<key> --hostname=<name> --advertise-tags=tag:ecoya-client --ssh"
     fi
   else
     warn "Tailscale not joined — remote SSH/VNC won't work until you run:"
-    warn "  sudo tailscale up --hostname=<name> --advertise-tags=tag:ecoya-client --ssh"
+    warn "  sudo $TAILSCALE_BIN up --hostname=<name> --advertise-tags=tag:ecoya-client --ssh"
   fi
 fi
 
@@ -286,9 +298,9 @@ cat <<'POST'
 POST
 
 # Remote-access cheatsheet for Jacky (printed at end so it's the last thing on screen)
-if command -v tailscale >/dev/null 2>&1 && tailscale status 2>/dev/null | grep -qE "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\s"; then
-  TS_IP_FINAL="$(tailscale ip -4 2>/dev/null | head -1)"
-  TS_NAME_FINAL="$(tailscale status --self --json 2>/dev/null | grep -m1 '"DNSName"' | sed 's/.*"DNSName":"//; s/\.",.*//; s/\..*//' || scutil --get LocalHostName 2>/dev/null)"
+if [[ -x "$TAILSCALE_BIN" ]] && "$TAILSCALE_BIN" status 2>/dev/null | grep -qE "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\s"; then
+  TS_IP_FINAL="$("$TAILSCALE_BIN" ip -4 2>/dev/null | head -1)"
+  TS_NAME_FINAL="$("$TAILSCALE_BIN" status --self --json 2>/dev/null | grep -m1 '"DNSName"' | sed 's/.*"DNSName":"//; s/\.",.*//; s/\..*//' || scutil --get LocalHostName 2>/dev/null)"
   cat <<REMOTE
 
 ────────────────────────────────────────────────────
