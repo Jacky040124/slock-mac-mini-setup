@@ -6,7 +6,7 @@
 
 set -e
 
-VERSION="v5.6.4"
+VERSION="v5.6.5"
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -58,18 +58,30 @@ else
   warn "Brewfile not found in script dir — skipping"
 fi
 
-# tailscale formula installs a launchd plist; start it as a background service
-# (only needed once — idempotent, brew services skips if already running)
-if brew services list 2>/dev/null | awk '/^tailscale/ {print $2}' | grep -q started; then
-  ok "tailscale launchd service already running"
-else
-  echo "Starting tailscale launchd service..."
-  if sudo brew services start tailscale; then
-    ok "tailscale service started"
-  else
-    warn "Failed to start tailscale service. Try manually: sudo brew services start tailscale"
-  fi
+# Old GUI Tailscale.app (cask) leaves its sandboxed tailscaled running, which
+# blocks the formula daemon from binding the socket and rejects `tailscale up
+# --ssh` with HTTP 500. Detect + remove the cask cleanly before starting the
+# formula daemon. On fresh installs (no cask), this whole block is a no-op.
+if [[ -d /Applications/Tailscale.app ]]; then
+  warn "Detected old Tailscale.app (cask GUI) — removing so formula daemon can take over"
+  osascript -e 'quit app "Tailscale"' 2>/dev/null || true
+  sleep 1
+  brew uninstall --cask tailscale-app 2>/dev/null || true
+  sudo pkill -f 'Tailscale.app/Contents' 2>/dev/null || true
+  sleep 1
+  ok "Old Tailscale GUI cleaned up"
 fi
+
+# tailscale formula installs a launchd plist; start (or restart) it as a
+# background service. `restart` covers both 'not running yet' and 'replacing
+# the GUI daemon we just killed' cases — idempotent either way.
+echo "Restarting tailscale launchd service to ensure formula daemon is the one running..."
+if sudo brew services restart tailscale 2>/dev/null; then
+  ok "tailscale service running"
+else
+  warn "Failed to (re)start tailscale service. Try manually: sudo brew services restart tailscale"
+fi
+sleep 2  # give the daemon a moment to bind the socket before `tailscale up`
 
 # ─── 4/6  npm globals ────────────────────────────────────────────────────────
 log "4/6  npm globals: Slock daemon / OpenAI Codex / OpenCLI"
