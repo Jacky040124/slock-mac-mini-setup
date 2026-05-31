@@ -79,15 +79,43 @@ SUDO_KEEPALIVE_PID=$!
 trap 'kill "$SUDO_KEEPALIVE_PID" 2>/dev/null || true' EXIT
 ok "sudo cached (background keep-alive PID $SUDO_KEEPALIVE_PID)"
 
-# ─── 1/4  git ────────────────────────────────────────────────────────────────
-log "1/4  Ensure git is available"
-if ! command -v git >/dev/null 2>&1; then
-  echo "git not found — triggering Xcode Command Line Tools install dialog..."
-  xcode-select --install || true
-  err "Install Xcode CLI Tools via the GUI dialog, then re-run bootstrap.sh"
+# ─── 1/4  git + Xcode CLI ────────────────────────────────────────────────────
+# Note: 'command -v git' alone is unreliable on fresh macOS — there's a stub
+# binary at /usr/bin/git that returns true but triggers the Xcode CLI installer
+# dialog (and exits non-zero) when actually invoked. Use xcode-select -p instead,
+# which checks whether the developer tools are really installed.
+log "1/4  Ensure Xcode Command Line Tools are installed"
+if xcode-select -p >/dev/null 2>&1; then
+  ok "Xcode CLI already installed ($(xcode-select -p))"
+else
+  echo "Xcode CLI not installed — triggering installer dialog now."
+  echo "Click 'Install' in the macOS dialog when it appears, accept the license,"
+  echo "and wait for the download (~1 GB, 3-5 min on a normal connection)."
+  xcode-select --install 2>/dev/null || true
+  echo
+  echo "Polling for installation to complete..."
+  WAITED=0
+  until xcode-select -p >/dev/null 2>&1; do
+    printf "."
+    sleep 5
+    WAITED=$((WAITED + 5))
+    if [[ "$WAITED" -ge 1800 ]]; then
+      echo
+      err "Xcode CLI install did not complete within 30 minutes."
+      err "Finish the GUI install manually, then re-run bootstrap.sh."
+      exit 1
+    fi
+  done
+  echo
+  ok "Xcode CLI installed ($(xcode-select -p))"
+fi
+
+# Sanity-check git too (Xcode CLI ships git, so this should pass now)
+if ! git --version >/dev/null 2>&1; then
+  err "git still not working after Xcode CLI install. Check 'xcode-select -p' and 'which git'."
   exit 1
 fi
-ok "git available"
+ok "git available ($(git --version | head -1))"
 
 # ─── 2/4  Clone / pull repo ──────────────────────────────────────────────────
 log "2/4  Fetch setup repo into $TARGET_DIR"
