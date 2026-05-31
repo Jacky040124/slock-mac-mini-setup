@@ -6,6 +6,7 @@
 brew "git"
 brew "node"
 brew "uv"
+brew "tailscale"   # CLI/daemon version — supports `tailscale up --ssh` (cask GUI version doesn't)
 
 # Casks
 cask "ghostty"
@@ -13,4 +14,3 @@ cask "google-chrome"
 cask "claude-code"
 cask "beeper"
 cask "obsidian"
-cask "tailscale-app"

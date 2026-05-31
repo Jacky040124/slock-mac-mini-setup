@@ -6,7 +6,7 @@
 
 set -e
 
-VERSION="v5.6.3"
+VERSION="v5.6.4"
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -50,12 +50,25 @@ else
 fi
 
 # ─── 3/6  Brewfile ───────────────────────────────────────────────────────────
-log "3/6  Brewfile (git / node / uv / ghostty / chrome / claude-code / beeper / obsidian / tailscale)"
+log "3/6  Brewfile (git / node / uv / tailscale / ghostty / chrome / claude-code / beeper / obsidian)"
 if [[ -f "$SCRIPT_DIR/Brewfile" ]]; then
   brew bundle install --file="$SCRIPT_DIR/Brewfile"
   ok "Brewfile done"
 else
   warn "Brewfile not found in script dir — skipping"
+fi
+
+# tailscale formula installs a launchd plist; start it as a background service
+# (only needed once — idempotent, brew services skips if already running)
+if brew services list 2>/dev/null | awk '/^tailscale/ {print $2}' | grep -q started; then
+  ok "tailscale launchd service already running"
+else
+  echo "Starting tailscale launchd service..."
+  if sudo brew services start tailscale; then
+    ok "tailscale service started"
+  else
+    warn "Failed to start tailscale service. Try manually: sudo brew services start tailscale"
+  fi
 fi
 
 # ─── 4/6  npm globals ────────────────────────────────────────────────────────
@@ -102,15 +115,16 @@ verify_app "Ghostty.app"
 verify_app "Google Chrome.app"
 verify_app "Beeper Desktop.app"
 verify_app "Obsidian.app"
-verify_app "Tailscale.app"
+# Note: Tailscale is now the CLI/daemon formula, not the cask, so no Tailscale.app
 
 # CLI tools (from Brewfile formulas, casks shipping a CLI, and npm globals)
 verify_cli git
 verify_cli node
 verify_cli uv
+verify_cli tailscale
 verify_cli claude
 verify_cli codex
-verify_cli slock
+verify_cli slock-daemon   # npm @slock-ai/daemon exposes binary as 'slock-daemon', not 'slock'
 verify_cli opencli
 
 if [[ "$VERIFY_FAILED" -eq 1 ]]; then
@@ -140,18 +154,18 @@ ver "node"         "node --version"
 ver "uv"           "uv --version"
 ver "Claude Code"  "claude --version"
 ver "Codex"        "codex --version"
-ver "Slock"        "slock --version"
+ver "Slock daemon" "slock-daemon --version"
+ver "Tailscale"    "tailscale --version"
 ver "OpenCLI"      "opencli --version"
 echo "═══════════════════════════════════════════════════"
 
 # ─── Tailscale + macOS Screen Sharing (remote support backbone) ──────────────
 log "Tailscale + Screen Sharing setup (for remote SSH/VNC from Jacky's MacBook)"
 
-# Tailscale CLI shim lives at /usr/local/bin/tailscale (Intel) or /opt/homebrew/bin/tailscale
-# (Apple Silicon brew). 'sudo' uses secure_path by default which doesn't include those,
-# so 'sudo tailscale' fails with 'command not found'. Use the absolute path inside the .app
-# bundle, which always works regardless of brew layout.
-TAILSCALE_BIN="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+# Tailscale CLI formula (brew install tailscale, not the cask GUI).
+# 'sudo' uses secure_path by default which doesn't include /opt/homebrew/bin,
+# so 'sudo tailscale' would fail with 'command not found'. Use the absolute path.
+TAILSCALE_BIN="/opt/homebrew/bin/tailscale"
 
 if "$TAILSCALE_BIN" status 2>/dev/null | grep -qE "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\s"; then
   ok "Tailscale already up: $("$TAILSCALE_BIN" ip -4 2>/dev/null | head -1)"
