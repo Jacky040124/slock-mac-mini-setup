@@ -6,7 +6,7 @@
 
 set -e
 
-VERSION="v5.5"
+VERSION="v5.6"
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -130,6 +130,56 @@ ver "Slock"        "slock --version"
 ver "OpenCLI"      "opencli --version"
 echo "═══════════════════════════════════════════════════"
 
+# ─── Tailscale + macOS Screen Sharing (remote support backbone) ──────────────
+log "Tailscale + Screen Sharing setup (for remote SSH/VNC from Jacky's MacBook)"
+
+if tailscale status 2>/dev/null | grep -qE "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\s"; then
+  ok "Tailscale already up: $(tailscale ip -4 2>/dev/null | head -1)"
+else
+  echo
+  echo "Need a Tailscale auth key for this machine to join the Ecoya tailnet."
+  echo "If you don't have a long-lived one yet, generate at:"
+  echo "  https://login.tailscale.com/admin/settings/keys"
+  echo "Recommended settings (safe — joined machines get tag:ecoya-client which has"
+  echo "no inbound access per the ACL, so leaking the key only allows others to"
+  echo "add unprivileged nodes to your tailnet that you can see and remove):"
+  echo "  Reusable: YES · Expires: 'No expiry' · Tags: tag:ecoya-client"
+  echo
+  read -rp "Paste Tailscale auth key (tskey-auth-...) or Enter to skip: " TS_AUTH_KEY
+
+  if [[ -n "$TS_AUTH_KEY" ]]; then
+    DEFAULT_HOSTNAME="$(scutil --get LocalHostName 2>/dev/null || echo 'ecoya-client')"
+    read -rp "Hostname on tailnet [$DEFAULT_HOSTNAME]: " TS_HOSTNAME
+    TS_HOSTNAME="${TS_HOSTNAME:-$DEFAULT_HOSTNAME}"
+
+    if sudo tailscale up \
+         --auth-key="$TS_AUTH_KEY" \
+         --hostname="$TS_HOSTNAME" \
+         --advertise-tags=tag:ecoya-client \
+         --ssh; then
+      TS_IP="$(tailscale ip -4 2>/dev/null | head -1)"
+      ok "Tailscale up as '$TS_HOSTNAME' (tailnet IP $TS_IP, Tailscale SSH enabled)"
+    else
+      warn "Tailscale up failed. Run manually:"
+      warn "  sudo tailscale up --auth-key=<key> --hostname=<name> --advertise-tags=tag:ecoya-client --ssh"
+    fi
+  else
+    warn "Tailscale not joined — remote SSH/VNC won't work until you run:"
+    warn "  sudo tailscale up --hostname=<name> --advertise-tags=tag:ecoya-client --ssh"
+  fi
+fi
+
+# Enable macOS Screen Sharing (VNC on port 5900) for remote desktop control
+log "Enable macOS Screen Sharing (VNC port 5900)"
+if sudo launchctl list 2>/dev/null | grep -q com.apple.screensharing; then
+  ok "Screen Sharing already enabled"
+elif sudo launchctl load -w /System/Library/LaunchDaemons/com.apple.screensharing.plist 2>/dev/null; then
+  ok "Screen Sharing enabled (port 5900)"
+else
+  warn "Screen Sharing enable failed. Enable manually:"
+  warn "  System Settings → General → Sharing → Screen Sharing: ON"
+fi
+
 # Sign in to AI tool CLIs (Claude Code + Codex use browser-based OAuth)
 log "AI tool sign-in (Claude Code + Codex use browser OAuth)"
 echo "Press Enter to start CLI sign-ins, or Ctrl+C to skip and do it manually later."
@@ -161,7 +211,6 @@ fi
 
 # Auto-open the GUI apps that still need manual sign-in
 log "Opening GUI apps for manual sign-in..."
-open -a "Tailscale" 2>/dev/null || true
 open -a "Beeper Desktop" 2>/dev/null || true
 open -a "Obsidian" 2>/dev/null || true
 open -a "Google Chrome" 2>/dev/null || true
@@ -172,12 +221,29 @@ cat <<'POST'
   Remaining manual steps (GUI)
 ────────────────────────────────────────────────────
   1. Chrome     → sign in to client accounts (XHS / IG / Gmail / WhatsApp Web / WeChat)
-  2. Tailscale  → join the Ecoya tailnet
-  3. Slock      → run `slock` and join the assigned workspace
-  4. Obsidian   → open the client workspace folder as a vault
-  5. Beeper     → sign in and attach client IM accounts
+  2. Slock      → run `slock` and join the assigned workspace
+  3. Obsidian   → open the client workspace folder as a vault
+  4. Beeper     → sign in and attach client IM accounts
 
 POST
+
+# Remote-access cheatsheet for Jacky (printed at end so it's the last thing on screen)
+if command -v tailscale >/dev/null 2>&1 && tailscale status 2>/dev/null | grep -qE "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\s"; then
+  TS_IP_FINAL="$(tailscale ip -4 2>/dev/null | head -1)"
+  TS_NAME_FINAL="$(tailscale status --self --json 2>/dev/null | grep -m1 '"DNSName"' | sed 's/.*"DNSName":"//; s/\.",.*//; s/\..*//' || scutil --get LocalHostName 2>/dev/null)"
+  cat <<REMOTE
+
+────────────────────────────────────────────────────
+  Remote access from Jacky's MacBook (save these)
+────────────────────────────────────────────────────
+  Hostname     : $TS_NAME_FINAL
+  Tailnet IP   : $TS_IP_FINAL
+  SSH          : tailscale ssh $USER@$TS_NAME_FINAL
+  Screen (VNC) : open vnc://$TS_NAME_FINAL/   (or use IP $TS_IP_FINAL)
+  Status check : tailscale status | grep $TS_NAME_FINAL
+
+REMOTE
+fi
 
 echo "Install log: $LOG_FILE"
 echo
