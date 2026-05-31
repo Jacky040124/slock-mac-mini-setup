@@ -88,26 +88,53 @@ log "1/4  Ensure Xcode Command Line Tools are installed"
 if xcode-select -p >/dev/null 2>&1; then
   ok "Xcode CLI already installed ($(xcode-select -p))"
 else
-  echo "Xcode CLI not installed — triggering installer dialog now."
-  echo "Click 'Install' in the macOS dialog when it appears, accept the license,"
-  echo "and wait for the download (~1 GB, 3-5 min on a normal connection)."
-  xcode-select --install 2>/dev/null || true
-  echo
-  echo "Polling for installation to complete..."
-  WAITED=0
-  until xcode-select -p >/dev/null 2>&1; do
-    printf "."
-    sleep 5
-    WAITED=$((WAITED + 5))
-    if [[ "$WAITED" -ge 1800 ]]; then
-      echo
-      err "Xcode CLI install did not complete within 30 minutes."
-      err "Finish the GUI install manually, then re-run bootstrap.sh."
+  echo "Installing Xcode Command Line Tools (~760 MB, 3-5 min on a normal connection)."
+
+  # Trigger file lets softwareupdate surface the CLT package
+  CLT_TRIGGER="/tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress"
+  sudo touch "$CLT_TRIGGER"
+
+  # Find the latest 'Command Line Tools' package label that softwareupdate sees
+  CLT_LABEL="$(softwareupdate --list 2>&1 \
+    | grep -E '\*.*Command Line Tools' \
+    | tail -1 \
+    | sed 's/^[* ]*Label: //; s/ *$//')"
+
+  if [[ -n "$CLT_LABEL" ]]; then
+    # Preferred path: install via softwareupdate CLI with live progress
+    echo "Installing package: $CLT_LABEL"
+    echo
+    if sudo softwareupdate -i "$CLT_LABEL" --verbose; then
+      sudo rm -f "$CLT_TRIGGER"
+      ok "Xcode CLI installed ($(xcode-select -p))"
+    else
+      sudo rm -f "$CLT_TRIGGER"
+      err "softwareupdate install failed. Try manually: sudo softwareupdate -i \"$CLT_LABEL\""
       exit 1
     fi
-  done
-  echo
-  ok "Xcode CLI installed ($(xcode-select -p))"
+  else
+    # Fallback: trigger the GUI installer + poll with elapsed-time display
+    sudo rm -f "$CLT_TRIGGER"
+    warn "Could not find a Command Line Tools label via softwareupdate."
+    warn "Falling back to GUI installer — click 'Install' when the dialog appears."
+    xcode-select --install 2>/dev/null || true
+    echo
+    echo "Polling for installation to complete (typical 3-5 min)..."
+    WAITED=0
+    until xcode-select -p >/dev/null 2>&1; do
+      printf "\r  [%dm %02ds elapsed / 30m max]" $((WAITED / 60)) $((WAITED % 60))
+      sleep 10
+      WAITED=$((WAITED + 10))
+      if [[ "$WAITED" -ge 1800 ]]; then
+        echo
+        err "Install did not complete within 30 minutes."
+        err "Finish the GUI install manually, then re-run bootstrap.sh."
+        exit 1
+      fi
+    done
+    echo
+    ok "Xcode CLI installed ($(xcode-select -p))"
+  fi
 fi
 
 # Sanity-check git too (Xcode CLI ships git, so this should pass now)
