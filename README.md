@@ -21,11 +21,43 @@ Takes 10-15 minutes depending on network.
 
 `bootstrap.sh` validates the environment before doing anything:
 
-1. **Admin user** — current macOS account must be admin (else Homebrew + cask installs fail)
-2. **Network** — must reach github.com
-3. **Sudo cache** — prompts admin password **once**, then a background keep-alive holds the cache so subsequent `sudo` calls (Homebrew, brew cask) pass silently
+1. **Apple Silicon** — exits fast on Intel Mac (Apple discontinued Intel Mac mini in late 2022)
+2. **Admin user** — current macOS account must be admin
+3. **Disk space** — needs ≥ 5 GB free on `/`
+4. **Network** — must reach github.com
+5. **Sudo cache** — prompts admin password **once**, then a background keep-alive holds the cache for ~15 min so subsequent `sudo` calls pass silently
 
 If any check fails, the script exits with a clear actionable message and does **not** start installing.
+
+## Tailscale auth key (for remote support)
+
+`install.sh` joins this machine to the Ecoya Tailscale tailnet so the consultant can SSH and VNC remotely. It needs a Tailscale auth key (`tskey-auth-...`). Three ways to provide it, in order of preference:
+
+### 1. Pre-create env file (most automated)
+
+Before running `bootstrap.sh`, drop a file at `~/.slock-mac-mini-setup.env`:
+
+```
+TAILSCALE_AUTH_KEY=tskey-auth-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+`install.sh` will source it automatically — no prompts.
+
+### 2. Environment variable
+
+```bash
+TAILSCALE_AUTH_KEY=tskey-auth-... bash ~/bootstrap.sh
+```
+
+### 3. Interactive prompt (fallback)
+
+If neither of the above is set, `install.sh` will prompt:
+
+```
+Paste Tailscale auth key (tskey-auth-...) or Enter to skip:
+```
+
+Press Enter to skip Tailscale entirely (you can run `sudo tailscale up` manually later).
 
 ## What it installs (14 items)
 

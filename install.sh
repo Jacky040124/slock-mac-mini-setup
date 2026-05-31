@@ -6,7 +6,7 @@
 
 set -e
 
-VERSION="v5.6"
+VERSION="v5.6.1"
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -136,16 +136,37 @@ log "Tailscale + Screen Sharing setup (for remote SSH/VNC from Jacky's MacBook)"
 if tailscale status 2>/dev/null | grep -qE "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\s"; then
   ok "Tailscale already up: $(tailscale ip -4 2>/dev/null | head -1)"
 else
-  echo
-  echo "Need a Tailscale auth key for this machine to join the Ecoya tailnet."
-  echo "If you don't have a long-lived one yet, generate at:"
-  echo "  https://login.tailscale.com/admin/settings/keys"
-  echo "Recommended settings (safe — joined machines get tag:ecoya-client which has"
-  echo "no inbound access per the ACL, so leaking the key only allows others to"
-  echo "add unprivileged nodes to your tailnet that you can see and remove):"
-  echo "  Reusable: YES · Expires: 'No expiry' · Tags: tag:ecoya-client"
-  echo
-  read -rp "Paste Tailscale auth key (tskey-auth-...) or Enter to skip: " TS_AUTH_KEY
+  # Auth key resolution order:
+  #   1. $TAILSCALE_AUTH_KEY env var (highest priority)
+  #   2. ~/.slock-mac-mini-setup.env file (source it if present)
+  #   3. Interactive prompt (fallback)
+  ENV_FILE="$HOME/.slock-mac-mini-setup.env"
+  if [[ -f "$ENV_FILE" ]]; then
+    # shellcheck disable=SC1090
+    source "$ENV_FILE"
+    ok "Loaded $ENV_FILE"
+  fi
+
+  TS_AUTH_KEY="${TAILSCALE_AUTH_KEY:-}"
+
+  if [[ -z "$TS_AUTH_KEY" ]]; then
+    echo
+    echo "Tailscale auth key needed. Three ways to provide it (in order of preference):"
+    echo "  1. Pre-create file:  ~/.slock-mac-mini-setup.env  (one line: TAILSCALE_AUTH_KEY=tskey-auth-...)"
+    echo "  2. Env var:          TAILSCALE_AUTH_KEY=tskey-... bash bootstrap.sh"
+    echo "  3. Paste here interactively (this prompt)"
+    echo
+    echo "If you don't have a long-lived key yet, generate at:"
+    echo "  https://login.tailscale.com/admin/settings/keys"
+    echo "  Reusable: YES · Expires: 'No expiry' · Tags: tag:ecoya-client"
+    echo "(Safe to be reusable — joined machines get tag:ecoya-client which has no inbound"
+    echo " access per the ACL, so leak only lets others add unprivileged nodes that you see"
+    echo " and can remove from the admin console.)"
+    echo
+    read -rp "Paste Tailscale auth key (tskey-auth-...) or Enter to skip: " TS_AUTH_KEY
+  else
+    ok "Using TAILSCALE_AUTH_KEY from environment (length ${#TS_AUTH_KEY})"
+  fi
 
   if [[ -n "$TS_AUTH_KEY" ]]; then
     DEFAULT_HOSTNAME="$(scutil --get LocalHostName 2>/dev/null || echo 'ecoya-client')"

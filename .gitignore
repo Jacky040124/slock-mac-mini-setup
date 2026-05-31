@@ -5,5 +5,9 @@ Brewfile.lock.json
 *.log
 install-*.log
 
+# Env files (may contain Tailscale auth key etc) — NEVER commit
+*.env
+.env
+
 # macOS
 .DS_Store
