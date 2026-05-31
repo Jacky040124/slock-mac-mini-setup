@@ -6,7 +6,7 @@
 
 set -e
 
-VERSION="v5.6.5"
+VERSION="v5.6.6"
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -17,7 +17,6 @@ find "$SCRIPT_DIR" -maxdepth 1 -name "install-*.log" -type f -mtime +7 -delete 2
 
 LOG_FILE="$SCRIPT_DIR/install-$(date +%Y%m%d-%H%M%S).log"
 exec > >(tee "$LOG_FILE") 2>&1
-echo "Log: $LOG_FILE"
 
 log()  { printf "\n\033[1;36m▶ %s\033[0m\n" "$1"; }
 ok()   { printf "\033[1;32m✓ %s\033[0m\n" "$1"; }
@@ -196,22 +195,9 @@ else
   TS_AUTH_KEY="${TAILSCALE_AUTH_KEY:-}"
 
   if [[ -z "$TS_AUTH_KEY" ]]; then
-    echo
-    echo "Tailscale auth key needed. Three ways to provide it (in order of preference):"
-    echo "  1. Pre-create file:  ~/.slock-mac-mini-setup.env  (one line: TAILSCALE_AUTH_KEY=tskey-auth-...)"
-    echo "  2. Env var:          TAILSCALE_AUTH_KEY=tskey-... bash bootstrap.sh"
-    echo "  3. Paste here interactively (this prompt)"
-    echo
-    echo "If you don't have a long-lived key yet, generate at:"
-    echo "  https://login.tailscale.com/admin/settings/keys"
-    echo "  Reusable: YES · Expires: 'No expiry' · Tags: tag:ecoya-client"
-    echo "(Safe to be reusable — joined machines get tag:ecoya-client which has no inbound"
-    echo " access per the ACL, so leak only lets others add unprivileged nodes that you see"
-    echo " and can remove from the admin console.)"
-    echo
     read -rp "Paste Tailscale auth key (tskey-auth-...) or Enter to skip: " TS_AUTH_KEY
   else
-    ok "Using TAILSCALE_AUTH_KEY from environment (length ${#TS_AUTH_KEY})"
+    ok "Using TAILSCALE_AUTH_KEY from environment"
   fi
 
   if [[ -n "$TS_AUTH_KEY" ]]; then
@@ -253,10 +239,8 @@ else
   warn "  System Settings → General → Sharing → Screen Sharing: ON"
 fi
 
-# Sign in to AI tool CLIs (Claude Code + Codex use browser-based OAuth)
-# Each is optional per client — most clients only use one. We check current
-# status first and only prompt for the ones that aren't already authenticated.
-log "AI tool sign-in (Claude Code + Codex, browser OAuth)"
+# AI tool CLIs (Claude Code + Codex) — each optional per client, skip if already authed
+log "AI tool sign-in"
 
 claude_authed=0
 codex_authed=0
@@ -266,80 +250,23 @@ codex login status  >/dev/null 2>&1 && codex_authed=1
 if [[ "$claude_authed" -eq 1 ]]; then ok "Claude Code already authenticated"; fi
 if [[ "$codex_authed"  -eq 1 ]]; then ok "Codex already authenticated"; fi
 
-if [[ "$claude_authed" -eq 1 && "$codex_authed" -eq 1 ]]; then
-  ok "Both AI tools authenticated — no sign-in needed"
-else
-  echo
-  echo "Each AI tool sign-in is optional — most clients only use one."
-
-  if [[ "$claude_authed" -eq 0 ]]; then
-    read -rp "Sign in to Claude Code (Anthropic)? [y/N]: " ans
-    case "$ans" in
-      [Yy]*)
-        if claude auth login; then
-          ok "Claude Code signed in"
-        else
-          warn "Claude Code sign-in failed. Run later: claude auth login"
-        fi
-        ;;
-      *)
-        warn "Skipped Claude Code. Run later: claude auth login"
-        ;;
-    esac
-  fi
-
-  if [[ "$codex_authed" -eq 0 ]]; then
-    read -rp "Sign in to Codex (OpenAI)? [y/N]: " ans
-    case "$ans" in
-      [Yy]*)
-        if codex login; then
-          ok "Codex signed in"
-        else
-          warn "Codex sign-in failed. Run later: codex login"
-        fi
-        ;;
-      *)
-        warn "Skipped Codex. Run later: codex login"
-        ;;
-    esac
+if [[ "$claude_authed" -eq 0 ]]; then
+  read -rp "Sign in to Claude Code (Anthropic)? [y/N]: " ans
+  if [[ "$ans" =~ ^[Yy] ]]; then
+    if claude auth login; then ok "Claude Code signed in"; else warn "Claude Code sign-in failed. Run later: claude auth login"; fi
+  else
+    warn "Skipped Claude Code. Run later: claude auth login"
   fi
 fi
 
-# Auto-open the GUI apps that still need manual sign-in
-log "Opening GUI apps for manual sign-in..."
-open -a "Beeper Desktop" 2>/dev/null || true
-open -a "Obsidian" 2>/dev/null || true
-open -a "Google Chrome" 2>/dev/null || true
-
-cat <<'POST'
-
-────────────────────────────────────────────────────
-  Remaining manual steps (GUI)
-────────────────────────────────────────────────────
-  1. Chrome     → sign in to client accounts (XHS / IG / Gmail / WhatsApp Web / WeChat)
-  2. Slock      → run `slock` and join the assigned workspace
-  3. Obsidian   → open the client workspace folder as a vault
-  4. Beeper     → sign in and attach client IM accounts
-
-POST
-
-# Remote-access cheatsheet for Jacky (printed at end so it's the last thing on screen)
-if [[ -x "$TAILSCALE_BIN" ]] && "$TAILSCALE_BIN" status 2>/dev/null | grep -qE "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\s"; then
-  TS_IP_FINAL="$("$TAILSCALE_BIN" ip -4 2>/dev/null | head -1)"
-  TS_NAME_FINAL="$("$TAILSCALE_BIN" status --self --json 2>/dev/null | grep -m1 '"DNSName"' | sed 's/.*"DNSName":"//; s/\.",.*//; s/\..*//' || scutil --get LocalHostName 2>/dev/null)"
-  cat <<REMOTE
-
-────────────────────────────────────────────────────
-  Remote access from Jacky's MacBook (save these)
-────────────────────────────────────────────────────
-  Hostname     : $TS_NAME_FINAL
-  Tailnet IP   : $TS_IP_FINAL
-  SSH          : tailscale ssh $USER@$TS_NAME_FINAL
-  Screen (VNC) : open vnc://$TS_NAME_FINAL/   (or use IP $TS_IP_FINAL)
-  Status check : tailscale status | grep $TS_NAME_FINAL
-
-REMOTE
+if [[ "$codex_authed" -eq 0 ]]; then
+  read -rp "Sign in to Codex (OpenAI)? [y/N]: " ans
+  if [[ "$ans" =~ ^[Yy] ]]; then
+    if codex login; then ok "Codex signed in"; else warn "Codex sign-in failed. Run later: codex login"; fi
+  else
+    warn "Skipped Codex. Run later: codex login"
+  fi
 fi
 
-echo "Install log: $LOG_FILE"
 echo
+echo "Install log: $LOG_FILE"
