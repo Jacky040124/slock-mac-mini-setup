@@ -6,7 +6,7 @@
 
 set -e
 
-VERSION="v5.6.9"
+VERSION="v5.6.10"
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -255,22 +255,38 @@ else
 fi
 
 # Enable macOS Screen Sharing (VNC on port 5900) for remote desktop control.
-# Use Apple's kickstart tool — `launchctl load` alone starts the daemon but
-# doesn't configure the GUI permission layer ("who can connect"), so VNC
-# clients hit 'Screen Sharing is not permitted'. kickstart configures both.
-log "Enable macOS Screen Sharing (VNC port 5900, all users allowed)"
-KICKSTART="/System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart"
-if sudo "$KICKSTART" \
-     -activate -configure -access -on \
-     -clientopts -setvnclegacy -vnclegacy yes \
-     -restart -agent -privs -all -allowAccessFor -allUsers \
-     >/dev/null 2>&1; then
-  ok "Screen Sharing enabled and access granted to all users"
+#
+# Important: macOS Sharing pane has TWO mutually-exclusive options for
+# remote control: 'Screen Sharing' (basic) and 'Remote Management' (Apple
+# Remote Desktop). Turning on Remote Management locks out the Screen Sharing
+# toggle. We want plain Screen Sharing — simpler UX, just works.
+#
+# Also: on macOS 14+ (Sonoma/Sequoia) the TCC framework requires a
+# user-initiated GUI toggle for the consent to actually stick. Programmatic
+# launchctl alone gets the daemon running but VNC clients still get
+# 'Screen Sharing is not permitted'. So after we start the daemon we also
+# open System Settings to the Sharing pane and tell the operator to do a
+# one-time toggle. Subsequent runs of install.sh are no-op.
+log "Enable macOS Screen Sharing (VNC port 5900)"
+if sudo launchctl list 2>/dev/null | grep -q com.apple.screensharing; then
+  ok "Screen Sharing daemon already loaded"
+elif sudo launchctl load -w /System/Library/LaunchDaemons/com.apple.screensharing.plist 2>/dev/null; then
+  ok "Screen Sharing daemon loaded (port 5900)"
 else
-  warn "kickstart failed. Enable manually:"
-  warn "  System Settings → General → Sharing → Screen Sharing: ON"
-  warn "  (then ⓘ icon → Allow access for: All users)"
+  warn "Failed to load Screen Sharing daemon"
 fi
+
+# First-time-only manual step: open Sharing pane so operator can toggle once
+echo
+echo "Opening System Settings → Sharing so you can confirm Screen Sharing is ON."
+open "x-apple.systempreferences:com.apple.preference.sharing?Services_Screen Sharing" 2>/dev/null || true
+warn "FIRST-TIME ONLY one-shot manual step (macOS TCC requirement, ~10s):"
+warn "  1. In the Sharing pane that just opened,"
+warn "     - if 'Remote Management' is ON: toggle it OFF (it locks Screen Sharing)"
+warn "     - toggle 'Screen Sharing' OFF then ON"
+warn "     - click the ⓘ next to Screen Sharing → 'Allow access for: All users'"
+warn "  2. Approve any macOS permission dialog that appears."
+warn "After this one toggle, future install.sh re-runs are silent — macOS remembers."
 
 # AI tool CLIs (Claude Code + Codex) — each optional per client, skip if already authed
 log "AI tool sign-in"
