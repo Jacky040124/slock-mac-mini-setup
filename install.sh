@@ -6,7 +6,7 @@
 
 set -e
 
-VERSION="v5.6.8"
+VERSION="v5.6.9"
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -254,15 +254,22 @@ else
   fi
 fi
 
-# Enable macOS Screen Sharing (VNC on port 5900) for remote desktop control
-log "Enable macOS Screen Sharing (VNC port 5900)"
-if sudo launchctl list 2>/dev/null | grep -q com.apple.screensharing; then
-  ok "Screen Sharing already enabled"
-elif sudo launchctl load -w /System/Library/LaunchDaemons/com.apple.screensharing.plist 2>/dev/null; then
-  ok "Screen Sharing enabled (port 5900)"
+# Enable macOS Screen Sharing (VNC on port 5900) for remote desktop control.
+# Use Apple's kickstart tool — `launchctl load` alone starts the daemon but
+# doesn't configure the GUI permission layer ("who can connect"), so VNC
+# clients hit 'Screen Sharing is not permitted'. kickstart configures both.
+log "Enable macOS Screen Sharing (VNC port 5900, all users allowed)"
+KICKSTART="/System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart"
+if sudo "$KICKSTART" \
+     -activate -configure -access -on \
+     -clientopts -setvnclegacy -vnclegacy yes \
+     -restart -agent -privs -all -allowAccessFor -allUsers \
+     >/dev/null 2>&1; then
+  ok "Screen Sharing enabled and access granted to all users"
 else
-  warn "Screen Sharing enable failed. Enable manually:"
+  warn "kickstart failed. Enable manually:"
   warn "  System Settings → General → Sharing → Screen Sharing: ON"
+  warn "  (then ⓘ icon → Allow access for: All users)"
 fi
 
 # AI tool CLIs (Claude Code + Codex) — each optional per client, skip if already authed
