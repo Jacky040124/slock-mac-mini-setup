@@ -7,13 +7,14 @@
 
 set -e
 
-VERSION="v5.5"
+VERSION="v5.6.8"
 REPO_URL="https://github.com/Jacky040124/slock-mac-mini-setup.git"
 TARGET_DIR="$HOME/slock-mac-mini-setup"
 
-log() { printf "\n\033[1;36m▶ %s\033[0m\n" "$1"; }
-ok()  { printf "\033[1;32m✓ %s\033[0m\n" "$1"; }
-err() { printf "\033[1;31m✗ %s\033[0m\n" "$1"; }
+log()  { printf "\n\033[1;36m▶ %s\033[0m\n" "$1"; }
+ok()   { printf "\033[1;32m✓ %s\033[0m\n" "$1"; }
+warn() { printf "\033[1;33m⚠ %s\033[0m\n" "$1"; }
+err()  { printf "\033[1;31m✗ %s\033[0m\n" "$1"; }
 
 # ─── Banner ──────────────────────────────────────────────────────────────────
 cat <<BANNER
