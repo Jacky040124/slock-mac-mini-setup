@@ -6,12 +6,16 @@
 
 set -e
 
-VERSION="v5.6.1"
+VERSION="v5.6.2"
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-LOG_FILE="$SCRIPT_DIR/install-$(date +%Y%m%d-%H%M%S).log"
 mkdir -p "$SCRIPT_DIR"
+
+# Clean up install logs older than 7 days so they don't pile up across runs
+find "$SCRIPT_DIR" -maxdepth 1 -name "install-*.log" -type f -mtime +7 -delete 2>/dev/null || true
+
+LOG_FILE="$SCRIPT_DIR/install-$(date +%Y%m%d-%H%M%S).log"
 exec > >(tee "$LOG_FILE") 2>&1
 echo "Log: $LOG_FILE"
 
@@ -56,11 +60,21 @@ fi
 
 # ─── 4/6  npm globals ────────────────────────────────────────────────────────
 log "4/6  npm globals: Slock daemon / OpenAI Codex / OpenCLI"
-npm install -g \
-  @slock-ai/daemon \
-  @openai/codex \
-  @jackwener/opencli
-ok "npm globals installed"
+need_pkg=()
+for pkg in @slock-ai/daemon @openai/codex @jackwener/opencli; do
+  if npm ls -g "$pkg" --depth=0 >/dev/null 2>&1; then
+    ok "$pkg already installed"
+  else
+    need_pkg+=("$pkg")
+  fi
+done
+if [[ "${#need_pkg[@]}" -gt 0 ]]; then
+  echo "Installing: ${need_pkg[*]}"
+  npm install -g "${need_pkg[@]}"
+  ok "npm globals installed"
+else
+  ok "All npm globals already present — nothing to install"
+fi
 
 # ─── 5/6  Post-install verification ──────────────────────────────────────────
 log "5/6  Verify installation"
@@ -202,31 +216,54 @@ else
 fi
 
 # Sign in to AI tool CLIs (Claude Code + Codex use browser-based OAuth)
-log "AI tool sign-in (Claude Code + Codex use browser OAuth)"
-echo "Press Enter to start CLI sign-ins, or Ctrl+C to skip and do it manually later."
-read -r _
+# Each is optional per client — most clients only use one. We check current
+# status first and only prompt for the ones that aren't already authenticated.
+log "AI tool sign-in (Claude Code + Codex, browser OAuth)"
 
-# Claude Code (Anthropic)
-log "Sign in to Claude Code"
-if claude auth status >/dev/null 2>&1; then
-  ok "Claude Code already authenticated"
+claude_authed=0
+codex_authed=0
+claude auth status >/dev/null 2>&1 && claude_authed=1
+codex login status  >/dev/null 2>&1 && codex_authed=1
+
+if [[ "$claude_authed" -eq 1 ]]; then ok "Claude Code already authenticated"; fi
+if [[ "$codex_authed"  -eq 1 ]]; then ok "Codex already authenticated"; fi
+
+if [[ "$claude_authed" -eq 1 && "$codex_authed" -eq 1 ]]; then
+  ok "Both AI tools authenticated — no sign-in needed"
 else
-  if claude auth login; then
-    ok "Claude Code signed in"
-  else
-    warn "Claude Code sign-in skipped or failed. Run later: claude auth login"
+  echo
+  echo "Each AI tool sign-in is optional — most clients only use one."
+
+  if [[ "$claude_authed" -eq 0 ]]; then
+    read -rp "Sign in to Claude Code (Anthropic)? [y/N]: " ans
+    case "$ans" in
+      [Yy]*)
+        if claude auth login; then
+          ok "Claude Code signed in"
+        else
+          warn "Claude Code sign-in failed. Run later: claude auth login"
+        fi
+        ;;
+      *)
+        warn "Skipped Claude Code. Run later: claude auth login"
+        ;;
+    esac
   fi
-fi
 
-# Codex (OpenAI)
-log "Sign in to Codex"
-if codex login status >/dev/null 2>&1; then
-  ok "Codex already authenticated"
-else
-  if codex login; then
-    ok "Codex signed in"
-  else
-    warn "Codex sign-in skipped or failed. Run later: codex login"
+  if [[ "$codex_authed" -eq 0 ]]; then
+    read -rp "Sign in to Codex (OpenAI)? [y/N]: " ans
+    case "$ans" in
+      [Yy]*)
+        if codex login; then
+          ok "Codex signed in"
+        else
+          warn "Codex sign-in failed. Run later: codex login"
+        fi
+        ;;
+      *)
+        warn "Skipped Codex. Run later: codex login"
+        ;;
+    esac
   fi
 fi
 
